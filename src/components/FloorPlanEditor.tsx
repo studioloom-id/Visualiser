@@ -18,6 +18,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
   const settings = useStore((s) => s.settings)
   const [detecting, setDetecting] = useState(false)
   const [detectMsg, setDetectMsg] = useState('')
+  const [dragOver, setDragOver] = useState(false)
   const plan = space.floorPlan
   const fileRef = useRef<HTMLInputElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -33,6 +34,18 @@ export function FloorPlanEditor({ space }: { space: Space }) {
     const { image, width, height } = await fileToImage(f, 3000)
     if (plan && !confirm('Replace the floor plan? Elements and viewpoints stay where they are, but you will need to re-calibrate the scale.')) return
     updateSpace(space.id, { floorPlan: { image, width, height } })
+  }
+
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => { if (Array.from(e.dataTransfer.types).includes('Files')) { e.preventDefault(); setDragOver(true) } },
+    onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      const f = Array.from(e.dataTransfer.files).find((x) => x.type.startsWith('image/'))
+      if (f) setPlanImage(f)
+    },
+    style: { outline: dragOver ? '2px dashed var(--accent)' : 'none', outlineOffset: 4, borderRadius: 10 } as React.CSSProperties,
   }
 
   useEffect(() => {
@@ -67,11 +80,11 @@ export function FloorPlanEditor({ space }: { space: Space }) {
 
   if (!plan) {
     return (
-      <div className="empty">
+      <div className="empty" {...dropProps}>
         <p><b>No floor plan yet.</b> That is fine: you can still generate renders from a brief and references.</p>
         <p>When you have one, add it here to lock in layout and scale.</p>
         <button className="primary" onClick={() => fileRef.current?.click()}>Add floor plan</button>
-        <p className="mute">or paste an image with Ctrl/Cmd+V</p>
+        <p className="mute">or drag an image here, or paste with Ctrl/Cmd+V</p>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && setPlanImage(e.target.files[0])} />
       </div>
     )
@@ -158,7 +171,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
   const cone = 3 * (ppm ?? plan.width / 12)
 
   return (
-    <div className="split">
+    <div className="split" {...dropProps}>
       <div>
         <div className="toolbar">
           {([['select', 'Select'], ['pan', 'Pan'], ['calibrate', 'Set scale'], ['room', 'Set room'], ['element', '＋ Element'], ['viewpoint', '＋ Camera']] as [Tool, string][]).map(([t, l]) => (
