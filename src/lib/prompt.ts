@@ -50,6 +50,18 @@ export function describeDepth(d: number): string {
 
 const f1 = (n: number) => (Math.round(n * 10) / 10).toString()
 
+function locateOnPlan(fx: number, fy: number): string {
+  const v = fy < 0.34 ? 'top' : fy < 0.67 ? 'middle' : 'bottom'
+  const h = fx < 0.34 ? 'left' : fx < 0.67 ? 'centre' : 'right'
+  return `${v}-${h} of the plan`
+}
+
+function locateFromCamera(vp: Viewpoint, x: number, y: number, ppm: number): string {
+  const b = relativeBearing(vp, x, y)
+  const d = Math.hypot(x - vp.x, y - vp.y) / ppm
+  return Math.abs(b) <= vp.fov / 2 ? `${f1(d)} m from the camera, ${describeBearing(b)}, ${describeDepth(d)}` : 'outside the camera view'
+}
+
 export interface PromptInput {
   space: Space
   viewpointId?: string
@@ -60,6 +72,8 @@ export interface PromptInput {
   fixes?: string[]
   /** rendered blockout of the room from the chosen camera */
   guideImage?: string
+  /** the plan with the designer's annotations burned in, if any */
+  planImage?: string
 }
 
 export function buildPrompt(input: PromptInput): BuiltPrompt {
@@ -88,17 +102,28 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
     notes.push('No floor plan: the render uses your brief, references and notes only. Layout and scale checks are off.')
   } else {
     if (input.guideImage && vp) {
-      images.push({ label: 'Floor plan (for reading only, not sent to the image generator)', dataUrl: plan.image, kind: 'plan' })
+      images.push({ label: 'Floor plan (for reading only, not sent to the image generator)', dataUrl: input.planImage ?? plan.image, kind: 'plan' })
       images.push({ label: 'Layout guide: rough 3D blockout of the room seen from the camera', dataUrl: input.guideImage, kind: 'guide' })
       lines.push('The first image is a LAYOUT GUIDE: a rough 3D blockout of the room seen from the camera position. Match its composition exactly. Every coloured box is a piece of furniture or a door/window at that exact position, scale and proportion. Replace each box with a realistic item of the kind named in the element list below. Grey planes are walls, floor and ceiling. Do not add, remove or move anything. Never draw the boxes, flat colours or the guide\'s text labels in the final image: it must look like a photograph.')
     } else {
-      images.push({ label: 'Floor plan (top-down layout; the source of truth for placement)', dataUrl: plan.image, kind: 'plan' })
+      images.push({ label: 'Floor plan (top-down layout; the source of truth for placement)', dataUrl: input.planImage ?? plan.image, kind: 'plan' })
       lines.push('The first image is the floor plan. Follow its layout exactly: do not add, remove or relocate walls, doors, windows or furniture.')
     }
     if (!scale) {
       notes.push('Floor plan has no scale yet, so sizes and distances are left out of the prompt.')
     } else {
       lines.push(`Scale: the floor plan image covers about ${f1(plan.width / scale)} m × ${f1(plan.height / scale)} m.`)
+    }
+
+    const planNotes = plan.notes ?? []
+    if (planNotes.length) lines.push("The plan image also carries the designer's own coloured annotations (lines, arrows and text). Treat them as instructions.")
+    const texts = planNotes.filter((n) => n.type === 'text' && n.text?.trim())
+    if (texts.length) {
+      lines.push("Designer's notes written on the plan (follow them):")
+      for (const t of texts) {
+        const at = vp && scale ? locateFromCamera(vp, t.x, t.y, scale) : locateOnPlan(t.x / plan.width, t.y / plan.height)
+        lines.push(`- "${t.text!.trim()}" (${at})`)
+      }
     }
 
     if (space.elements.length) {

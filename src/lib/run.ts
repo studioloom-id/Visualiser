@@ -1,7 +1,7 @@
 import { useStore, projectOf, uid } from '../store'
 import type { Provider, Quality, Render, Space } from '../types'
 import { buildPrompt, inView, relativeBearing, describeBearing, distanceM, type BuiltPrompt } from './prompt'
-import { renderAnnotated } from './annotate'
+import { renderAnnotated, renderAnnotatedPlan } from './annotate'
 import { generateImage, regionEdit, reviewRender } from './providers'
 import { renderGuide } from './guide'
 import { budgetBlock, estimateCost, projectSpend } from './cost'
@@ -29,8 +29,10 @@ export async function prepare(p: Omit<GenParams, 'count' | 'provider' | 'quality
   for (const r of space.references) if (!p.excludeRefs?.includes(r.id)) referenceImages[r.id] = await renderAnnotated(r)
   const vp = space.viewpoints.find((v) => v.id === p.viewpointId)
   const guideImage = space.floorPlan?.pxPerMeter && vp ? renderGuide(space, vp, guideSize(p.quality ?? 'draft').w, guideSize(p.quality ?? 'draft').h) : undefined
+  const planImage = space.floorPlan ? await renderAnnotatedPlan(space.floorPlan) : undefined
   return buildPrompt({
     guideImage,
+    planImage,
     space: { ...space, references: space.references.filter((r) => !p.excludeRefs?.includes(r.id)) },
     viewpointId: p.viewpointId,
     style: st.styles.find((s) => s.id === space.styleId),

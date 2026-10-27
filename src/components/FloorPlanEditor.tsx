@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Stage, Layer, Image as KImage, Rect, Text, Line, Circle, Wedge, Group } from 'react-konva'
+import { Stage, Layer, Image as KImage, Rect, Text, Line, Arrow, Circle, Wedge, Group, Label, Tag } from 'react-konva'
 import type Konva from 'konva'
 import { useStore, uid } from '../store'
-import type { PlanElement, Space, Viewpoint } from '../types'
+import type { PlanElement, Shape, ShapeType, Space, Viewpoint } from '../types'
 import { fileToImage, imagesFromClipboard, loadImage } from '../lib/img'
 import { inView } from '../lib/prompt'
 import { detectPlan, writerLabel } from '../lib/claude'
 import { elementColor } from '../lib/guide'
+import { fontFor } from '../lib/annotate'
 
-type Tool = 'select' | 'pan' | 'calibrate' | 'room' | 'element' | 'viewpoint'
-type Sel = { type: 'el' | 'vp'; id: string } | null
+type Tool = 'select' | 'pan' | 'calibrate' | 'room' | 'element' | 'viewpoint' | ShapeType
+type Sel = { type: 'el' | 'vp' | 'note'; id: string } | null
+
+const NOTE_TOOLS: [ShapeType, string][] = [['line', '／ Line'], ['arrow', '↗ Arrow'], ['free', '✎ Draw'], ['text', 'T Text']]
+const NOTE_COLORS = ['#e53935', '#1e88e5', '#43a047', '#fb8c00', '#8e24aa', '#111111']
 
 const num = (v: string, min = 0) => Math.max(min, Number(v) || 0)
 
@@ -29,10 +33,12 @@ export function FloorPlanEditor({ space }: { space: Space }) {
   const [sel, setSel] = useState<Sel>(null)
   const [calPts, setCalPts] = useState<{ x: number; y: number }[]>([])
   const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+  const [noteColor, setNoteColor] = useState(NOTE_COLORS[0])
+  const [draft, setDraft] = useState<Shape | null>(null)
 
   const setPlanImage = async (f: Blob) => {
     const { image, width, height } = await fileToImage(f, 3000)
-    if (plan && !confirm('Replace the floor plan? Elements and viewpoints stay where they are, but you will need to re-calibrate the scale.')) return
+    if (plan && !confirm('Replace the floor plan? Elements and cameras stay where they are, but the scale, room outline and your annotations on the old plan are cleared.')) return
     updateSpace(space.id, { floorPlan: { image, width, height } })
   }
 
@@ -118,6 +124,60 @@ export function FloorPlanEditor({ space }: { space: Space }) {
     }
   }
 
+  const notes = plan.notes ?? []
+  const setNotes = (n: Shape[]) => patchPlan({ notes: n })
+  const patchNote = (id: string, p: Partial<Shape>) => setNotes(notes.map((n) => (n.id === id ? { ...n, ...p } : n)))
+  const moveNote = (id: string, dx: number, dy: number) =>
+    setNotes(notes.map((n) => (n.id !== id ? n : { ...n, x: n.x + dx, y: n.y + dy, points: n.points?.map((v, i) => v + (i % 2 ? dy : dx)) })))
+
+  const isDrawTool = tool === 'line' || tool === 'arrow' || tool === 'free'
+  const down = () => {
+    if (!isDrawTool) return
+    const p = pointer()
+    setDraft(tool === 'free'
+      ? { id: uid(), type: 'free', color: noteColor, x: p.x, y: p.y, points: [p.x, p.y] }
+      : { id: uid(), type: tool as ShapeType, color: noteColor, x: p.x, y: p.y, w: 0, h: 0 })
+  }
+  const move = () => {
+    if (!draft) return
+    const p = pointer()
+    setDraft(draft.type === 'free' ? { ...draft, points: [...(draft.points ?? []), p.x, p.y] } : { ...draft, w: p.x - draft.x, h: p.y - draft.y })
+  }
+  const up = () => {
+    if (!draft) return
+    const d = draft
+    setDraft(null)
+    const tiny = d.type === 'free' ? (d.points?.length ?? 0) < 6 : Math.hypot(d.w ?? 0, d.h ?? 0) * view.k < 6
+    if (tiny) return
+    setNotes([...notes, d])
+    setSel({ type: 'note', id: d.id })
+  }
+
+  const fs = fontFor(plan.width)
+  const lw = Math.max(2, Math.round(plan.width / 400))
+  const noteView = (s: Shape, isDraft = false) => {
+    const on = sel?.type === 'note' && sel.id === s.id
+    const stroke = { stroke: s.color, strokeWidth: lw * (on ? 1.8 : 1), lineCap: 'round' as const, lineJoin: 'round' as const, hitStrokeWidth: Math.max(lw * 3, 14 / view.k) }
+    const x2 = s.x + (s.w ?? 0), y2 = s.y + (s.h ?? 0)
+    const len = s.type === 'line' && ppm ? `${(Math.hypot(s.w ?? 0, s.h ?? 0) / ppm).toFixed(2)} m` : ''
+    const cap = [s.text, len && (s.text ? `(${len})` : len)].filter(Boolean).join(' ')
+    return (
+      <Group key={s.id} draggable={tool === 'select' && !isDraft} listening={!isDraft}
+        onDragEnd={(e) => { const dx = e.target.x(), dy = e.target.y(); e.target.position({ x: 0, y: 0 }); moveNote(s.id, dx, dy) }}
+        onClick={(e) => { if (tool === 'select') { e.cancelBubble = true; setSel({ type: 'note', id: s.id }) } }}>
+        {s.type === 'line' && <Line points={[s.x, s.y, x2, y2]} {...stroke} />}
+        {s.type === 'arrow' && <Arrow points={[s.x, s.y, x2, y2]} fill={s.color} pointerLength={fs * 1.1} pointerWidth={fs * 0.9} {...stroke} />}
+        {s.type === 'free' && <Line points={s.points ?? []} {...stroke} />}
+        {(s.type === 'text' || ((s.type === 'line' || s.type === 'arrow') && cap)) && (
+          <Label x={s.type === 'text' ? s.x : (s.x + x2) / 2 + 4} y={(s.type === 'text' ? s.y : (s.y + y2) / 2 - 6) - fs}>
+            <Tag fill="rgba(255,255,255,.9)" stroke={on ? s.color : undefined} />
+            <Text text={s.type === 'text' ? s.text ?? '' : cap} fontSize={fs} fontStyle="bold" fill={s.color} padding={3} />
+          </Label>
+        )}
+      </Group>
+    )
+  }
+
   const pointer = () => stageRef.current!.getRelativePointerPosition() ?? { x: 0, y: 0 }
 
   const onStageClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -138,6 +198,13 @@ export function FloorPlanEditor({ space }: { space: Space }) {
       patchPlan({ room: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) } })
       setCalPts([])
       setTool('select')
+    } else if (tool === 'text' && onBg) {
+      const t = prompt('Text to write on the plan (e.g. "green velvet armchair here")')
+      if (t?.trim()) {
+        const n: Shape = { id: uid(), type: 'text', color: noteColor, x: p.x, y: p.y, text: t.trim() }
+        setNotes([...notes, n])
+        setSel({ type: 'note', id: n.id })
+      }
     } else if (tool === 'element' && onBg && ppm) {
       const el: PlanElement = { id: uid(), name: `Element ${space.elements.length + 1}`, x: p.x, y: p.y, w: 1, d: 1, h: 1, rotation: 0, locked: false }
       updateSpace(space.id, { elements: [...space.elements, el] })
@@ -162,11 +229,14 @@ export function FloorPlanEditor({ space }: { space: Space }) {
   }
 
   const selEl = sel?.type === 'el' ? space.elements.find((e) => e.id === sel.id) : undefined
+  const selNote = sel?.type === 'note' ? notes.find((n) => n.id === sel.id) : undefined
   const selVp = sel?.type === 'vp' ? space.viewpoints.find((v) => v.id === sel.id) : undefined
   const hint =
     tool === 'calibrate' ? `Click two points a known distance apart (${calPts.length}/2)` :
     tool === 'room' ? `Click two opposite inside corners of the main room (${calPts.length}/2)` :
     tool === 'element' ? 'Click on the plan to place an element' :
+    tool === 'line' || tool === 'arrow' || tool === 'free' ? 'Click and drag on the plan to draw' :
+    tool === 'text' ? 'Click on the plan where the text should go' :
     tool === 'viewpoint' ? 'Click on the plan to place a camera' : ''
   const cone = 3 * (ppm ?? plan.width / 12)
 
@@ -177,7 +247,15 @@ export function FloorPlanEditor({ space }: { space: Space }) {
           {([['select', 'Select'], ['pan', 'Pan'], ['calibrate', 'Set scale'], ['room', 'Set room'], ['element', '＋ Element'], ['viewpoint', '＋ Camera']] as [Tool, string][]).map(([t, l]) => (
             <button key={t} className={tool === t ? 'active' : ''} disabled={t === 'element' && !ppm} title={t === 'element' && !ppm ? 'Set the scale first so elements can be drawn to size' : ''} onClick={() => { setTool(t); setCalPts([]) }}>{l}</button>
           ))}
-          <button className="primary" disabled={detecting} onClick={detect} title="The AI reads the plan and places furniture, doors, windows and a camera at the door">{detecting ? 'Reading plan…' : `Read plan with ${writerLabel(settings)}`}</button>
+          <button disabled={detecting} onClick={detect} title="The AI reads the plan and places furniture, doors, windows and a camera at the door">{detecting ? 'Reading plan…' : `Read plan with ${writerLabel(settings)}`}</button>
+          <span style={{ width: 10 }} />
+          {NOTE_TOOLS.map(([t, l]) => <button key={t} className={tool === t ? 'active' : ''} onClick={() => { setTool(t); setCalPts([]) }}>{l}</button>)}
+          {NOTE_COLORS.map((c) => (
+            <button key={c} aria-label={`colour ${c}`} onClick={() => { setNoteColor(c); if (sel?.type === 'note') patchNote(sel.id, { color: c }) }}
+              style={{ width: 22, height: 22, padding: 0, background: c, borderRadius: 99, outline: noteColor === c ? '2px solid var(--ink)' : 'none', outlineOffset: 2 }} />
+          ))}
+          <button disabled={!notes.length} onClick={() => setNotes(notes.slice(0, -1))}>Undo mark</button>
+          <span style={{ width: 10 }} />
           <button onClick={fit}>Fit</button>
           <button onClick={() => fileRef.current?.click()}>Replace plan</button>
           <button className="danger" onClick={() => confirm('Remove the floor plan? Elements and cameras are kept but will no longer be sent to the AI.') && updateSpace(space.id, { floorPlan: undefined })}>Remove plan</button>
@@ -194,6 +272,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
             draggable={tool === 'pan'}
             onDragEnd={(e) => e.target === stageRef.current && setView({ ...view, x: e.target.x(), y: e.target.y() })}
             onWheel={onWheel} onClick={onStageClick}
+            onMouseDown={down} onMouseMove={move} onMouseUp={up} onTouchStart={down} onTouchMove={move} onTouchEnd={up}
           >
             <Layer>
               {img && <KImage image={img} name="plan" width={plan.width} height={plan.height} />}
@@ -223,6 +302,8 @@ export function FloorPlanEditor({ space }: { space: Space }) {
                 )
               })}
               {plan.room && <Rect x={plan.room.x} y={plan.room.y} width={plan.room.w} height={plan.room.h} stroke="#2f5d50" dash={[8 / view.k, 5 / view.k]} strokeWidth={2 / view.k} listening={false} />}
+              {notes.map((s) => noteView(s))}
+              {draft && noteView(draft, true)}
               {calPts.map((p, i) => <Circle key={i} x={p.x} y={p.y} radius={5 / view.k} fill="#b3261e" />)}
               {calPts.length === 2 && <Line points={[calPts[0].x, calPts[0].y, calPts[1].x, calPts[1].y]} stroke="#b3261e" strokeWidth={2 / view.k} />}
             </Layer>
@@ -270,13 +351,22 @@ export function FloorPlanEditor({ space }: { space: Space }) {
               <button className="danger" onClick={() => { updateSpace(space.id, { viewpoints: space.viewpoints.filter((v) => v.id !== selVp.id) }); setSel(null) }}>Delete camera</button>
             </>
           )}
-          {!selEl && !selVp && <p className="mute">Click an element or camera on the plan to edit it.</p>}
+          {selNote && (
+            <>
+              <label>{selNote.type === 'text' ? 'Text' : 'Label (optional)'}</label>
+              <textarea value={selNote.text ?? ''} onChange={(e) => patchNote(selNote.id, { text: e.target.value })} />
+              {selNote.type === 'line' && ppm && <p className="mute">Length is shown automatically from the scale.</p>}
+              <button className="danger" onClick={() => { setNotes(notes.filter((n) => n.id !== selNote.id)); setSel(null) }}>Delete mark</button>
+            </>
+          )}
+          {!selEl && !selVp && !selNote && <p className="mute">Click an element, camera or mark on the plan to edit it. Drag to move it.</p>}
         </div>
         <div className="card">
           <h3>On this plan</h3>
-          {space.elements.length + space.viewpoints.length === 0 && <p className="mute">Nothing placed yet.</p>}
+          {space.elements.length + space.viewpoints.length + notes.length === 0 && <p className="mute">Nothing placed yet.</p>}
           {space.viewpoints.map((v) => <div key={v.id}><button className="ghost" onClick={() => setSel({ type: 'vp', id: v.id })}>📷 {v.name}</button></div>)}
           {space.elements.map((e) => <div key={e.id}><button className="ghost" onClick={() => setSel({ type: 'el', id: e.id })}>{e.locked ? '🔒' : '▫'} {e.name}</button></div>)}
+          {notes.map((n) => <div key={n.id}><button className="ghost" style={{ color: n.color }} onClick={() => setSel({ type: 'note', id: n.id })}>✎ {n.text?.trim() || n.type}</button></div>)}
         </div>
       </div>
     </div>

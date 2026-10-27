@@ -13,7 +13,7 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
   ctx.fillText(text, x, y)
 }
 
-export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], imgWidth: number) {
+export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], imgWidth: number, opts: { ppm?: number } = {}) {
   const fs = fontFor(imgWidth)
   const lw = Math.max(2, Math.round(imgWidth / 400))
   let pin = 0
@@ -26,6 +26,12 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], imgWi
     if (s.type === 'rect') {
       ctx.strokeRect(s.x, s.y, s.w ?? 0, s.h ?? 0)
       label(ctx, s.text ?? '', s.x + 4, Math.min(s.y, s.y + (s.h ?? 0)) - 6, s.color, fs)
+    } else if (s.type === 'line') {
+      const x2 = s.x + (s.w ?? 0), y2 = s.y + (s.h ?? 0)
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke()
+      const len = opts.ppm ? `${(Math.hypot(x2 - s.x, y2 - s.y) / opts.ppm).toFixed(2)} m` : ''
+      const t = [s.text, len && (s.text ? `(${len})` : len)].filter(Boolean).join(' ')
+      label(ctx, t, (s.x + x2) / 2 + 4, (s.y + y2) / 2 - 6, s.color, fs)
     } else if (s.type === 'arrow') {
       const x2 = s.x + (s.w ?? 0), y2 = s.y + (s.h ?? 0)
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke()
@@ -72,4 +78,21 @@ export async function renderAnnotated(ref: Reference, maxSide = 1600): Promise<s
     drawShapes(ctx, ref.shapes, img.width)
   }
   return c.toDataURL('image/jpeg', 0.88)
+}
+
+/** The plan with the designer's annotations burned in; sent to the AI that writes the prompt. */
+export async function renderAnnotatedPlan(plan: { image: string; width: number; height: number; pxPerMeter?: number; notes?: Shape[] }, maxSide = 2000): Promise<string> {
+  if (!plan.notes?.length) return plan.image
+  const img = await loadImage(plan.image)
+  const k = Math.min(1, maxSide / Math.max(img.width, img.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(img.width * k)
+  c.height = Math.round(img.height * k)
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, c.width, c.height)
+  ctx.drawImage(img, 0, 0, c.width, c.height)
+  ctx.scale(k, k)
+  drawShapes(ctx, plan.notes, img.width, { ppm: plan.pxPerMeter })
+  return c.toDataURL('image/jpeg', 0.9)
 }

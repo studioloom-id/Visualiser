@@ -119,3 +119,19 @@ describe('toCamera', () => {
     expect(p.text).toContain('LAYOUT GUIDE')
   })
 })
+
+describe('plan annotations', () => {
+  const noted = {
+    ...withPlan,
+    floorPlan: { ...withPlan.floorPlan!, notes: [{ id: 'n1', type: 'text' as const, color: '#e53935', x: 500, y: 300, text: 'green velvet armchair here' }] },
+  }
+  it('locates text notes relative to the camera', () => {
+    const p = buildPrompt({ space: noted, viewpointId: 'v', referenceImages: {} })
+    expect(p.text).toContain('"green velvet armchair here" (4 m from the camera, straight ahead')
+    expect(p.text).toContain('coloured annotations')
+  })
+  it('falls back to a plain plan region without a camera', () => {
+    const p = buildPrompt({ space: noted, referenceImages: {} })
+    expect(p.text).toContain('(middle-centre of the plan)')
+  })
+})

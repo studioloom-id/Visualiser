@@ -9,6 +9,8 @@ export interface FloorPlan {
   pxPerMeter?: number
   /** interior of the main room, in plan pixels (used for the layout guide) */
   room?: { x: number; y: number; w: number; h: number }
+  /** the designer's own lines, arrows and text drawn on the plan, in plan pixels */
+  notes?: Shape[]
 }
 
 export interface PlanElement {
@@ -38,7 +40,7 @@ export interface Viewpoint {
   fov: number
 }
 
-export type ShapeType = 'rect' | 'arrow' | 'pin' | 'text' | 'free'
+export type ShapeType = 'rect' | 'line' | 'arrow' | 'pin' | 'text' | 'free'
 
 export interface Shape {
   id: string
