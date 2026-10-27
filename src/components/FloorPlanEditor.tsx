@@ -162,7 +162,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
     const len = s.type === 'line' && ppm ? `${(Math.hypot(s.w ?? 0, s.h ?? 0) / ppm).toFixed(2)} m` : ''
     const cap = [s.text, len && (s.text ? `(${len})` : len)].filter(Boolean).join(' ')
     return (
-      <Group key={s.id} draggable={tool === 'select' && !isDraft} listening={!isDraft}
+      <Group key={s.id} draggable={tool === 'select' && !isDraft} listening={tool === 'select' && !isDraft}
         onDragEnd={(e) => { const dx = e.target.x(), dy = e.target.y(); e.target.position({ x: 0, y: 0 }); moveNote(s.id, dx, dy) }}
         onClick={(e) => { if (tool === 'select') { e.cancelBubble = true; setSel({ type: 'note', id: s.id }) } }}>
         {s.type === 'line' && <Line points={[s.x, s.y, x2, y2]} {...stroke} />}
@@ -279,7 +279,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
               {space.viewpoints.map((v) => {
                 const on = sel?.id === v.id
                 return (
-                  <Group key={v.id} x={v.x} y={v.y} draggable={tool === 'select'}
+                  <Group key={v.id} x={v.x} y={v.y} draggable={tool === 'select'} listening={tool === 'select'}
                     onDragEnd={(e) => patchVp(v.id, { x: e.target.x(), y: e.target.y() })}
                     onClick={(e) => { if (tool === 'select') { e.cancelBubble = true; setSel({ type: 'vp', id: v.id }) } }}>
                     <Wedge radius={cone} angle={v.fov} rotation={v.angle - 90 - v.fov / 2} fill={on ? 'rgba(47,93,80,.35)' : 'rgba(47,93,80,.18)'} stroke="#2f5d50" strokeWidth={1 / view.k} />
@@ -293,7 +293,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
                 const on = sel?.id === el.id
                 const vis = selVp ? inView(selVp, el) : true
                 return (
-                  <Group key={el.id} x={el.x} y={el.y} rotation={el.rotation} draggable={tool === 'select'} opacity={vis ? 1 : 0.35}
+                  <Group key={el.id} x={el.x} y={el.y} rotation={el.rotation} draggable={tool === 'select'} listening={tool === 'select'} opacity={vis ? 1 : 0.35}
                     onDragEnd={(e) => patchEl(el.id, { x: e.target.x(), y: e.target.y() })}
                     onClick={(e) => { if (tool === 'select') { e.cancelBubble = true; setSel({ type: 'el', id: el.id }) } }}>
                     <Rect width={w} height={d} offsetX={w / 2} offsetY={d / 2} fill={elementColor(space, el)} fillOpacity={0.5} stroke={on ? '#1d1d1b' : elementColor(space, el)} strokeWidth={(on ? 2.5 : 1.5) / view.k} dash={el.locked ? [6 / view.k, 3 / view.k] : undefined} />
