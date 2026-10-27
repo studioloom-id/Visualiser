@@ -5,7 +5,7 @@ import { useStore, uid } from '../store'
 import type { PlanElement, Space, Viewpoint } from '../types'
 import { fileToImage, imagesFromClipboard, loadImage } from '../lib/img'
 import { inView } from '../lib/prompt'
-import { detectPlan } from '../lib/claude'
+import { detectPlan, writerLabel } from '../lib/claude'
 import { elementColor } from '../lib/guide'
 
 type Tool = 'select' | 'pan' | 'calibrate' | 'room' | 'element' | 'viewpoint'
@@ -101,7 +101,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
     setDetecting(true); setDetectMsg('')
     try {
       const d = await detectPlan(settings, plan)
-      if ((space.elements.length || space.viewpoints.length) && !confirm('Replace your current elements and cameras with what Claude found?')) return
+      if ((space.elements.length || space.viewpoints.length) && !confirm('Replace your current elements and cameras with what was found?')) return
       const ids = new Set(d.elements.map((e) => e.id))
       updateSpace(space.id, {
         floorPlan: { ...plan, pxPerMeter: d.pxPerMeter, room: d.room ?? plan.room },
@@ -110,7 +110,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
         references: space.references.map((r) => (r.elementId && !ids.has(r.elementId) ? { ...r, elementId: undefined } : r)),
       })
       setSel(null)
-      setDetectMsg(`Claude found ${d.elements.length} items${d.camera ? ' and a camera at the door' : ''}.${d.scaleEstimated ? ' The scale is an estimate: check it with "Set scale".' : ''} Check sizes and positions, then fix anything wrong.${d.notes ? ` Notes: ${d.notes}` : ''}`)
+      setDetectMsg(`${writerLabel(settings)} found ${d.elements.length} items${d.camera ? ' and a camera at the door' : ''}.${d.scaleEstimated ? ' The scale is an estimate: check it with "Set scale".' : ''} Check sizes and positions, then fix anything wrong.${d.notes ? ` Notes: ${d.notes}` : ''}`)
     } catch (e) {
       setDetectMsg(e instanceof Error ? e.message : String(e))
     } finally {
@@ -177,7 +177,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
           {([['select', 'Select'], ['pan', 'Pan'], ['calibrate', 'Set scale'], ['room', 'Set room'], ['element', '＋ Element'], ['viewpoint', '＋ Camera']] as [Tool, string][]).map(([t, l]) => (
             <button key={t} className={tool === t ? 'active' : ''} disabled={t === 'element' && !ppm} title={t === 'element' && !ppm ? 'Set the scale first so elements can be drawn to size' : ''} onClick={() => { setTool(t); setCalPts([]) }}>{l}</button>
           ))}
-          <button className="primary" disabled={detecting} onClick={detect} title="Claude reads the plan and places furniture, doors, windows and a camera at the door">{detecting ? 'Reading plan…' : 'Read plan with Claude'}</button>
+          <button className="primary" disabled={detecting} onClick={detect} title="The AI reads the plan and places furniture, doors, windows and a camera at the door">{detecting ? 'Reading plan…' : `Read plan with ${writerLabel(settings)}`}</button>
           <button onClick={fit}>Fit</button>
           <button onClick={() => fileRef.current?.click()}>Replace plan</button>
           <button className="danger" onClick={() => confirm('Remove the floor plan? Elements and cameras are kept but will no longer be sent to the AI.') && updateSpace(space.id, { floorPlan: undefined })}>Remove plan</button>
@@ -186,7 +186,7 @@ export function FloorPlanEditor({ space }: { space: Space }) {
         <p className={ppm ? 'mute' : 'warn'} style={{ margin: '0 0 8px' }}>
           {hint || (ppm ? `Scale set: the plan image covers ${(plan.width / ppm).toFixed(1)} × ${(plan.height / ppm).toFixed(1)} m. Scroll to zoom.` : 'Scale not set. Use "Set scale" and click two points whose real distance you know, such as a wall length.')}
         </p>
-        {detectMsg && <p className={/found/.test(detectMsg) ? 'ok' : 'bad'} role="status">{detectMsg}</p>}
+        {detectMsg && <p className={/ found \d+ items/.test(detectMsg) ? 'ok' : 'bad'} role="status">{detectMsg}</p>}
         <div className="stagewrap" ref={wrapRef} style={{ cursor: tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair' }}>
           <Stage
             ref={stageRef} width={size.w} height={size.h}

@@ -32,9 +32,17 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <input type="password" value={s.geminiKey} onChange={(e) => setSettings({ geminiKey: e.target.value })} autoComplete="off" />
       <label>OpenAI API key</label>
       <input type="password" value={s.openaiKey} onChange={(e) => setSettings({ openaiKey: e.target.value })} autoComplete="off" />
-      <label>Anthropic (Claude) API key, used to write prompts</label>
+      <label>Prompt writer and plan reader</label>
+      <select value={s.writer} onChange={(e) => setSettings({ writer: e.target.value as typeof s.writer })}>
+        <option value="auto">Auto (Claude if an Anthropic key is set, otherwise OpenAI)</option>
+        <option value="claude">Claude (needs Anthropic API credit)</option>
+        <option value="openai">OpenAI (uses your OpenAI key)</option>
+      </select>
+      <label>Anthropic (Claude) API key</label>
       <input type="password" value={s.anthropicKey} onChange={(e) => setSettings({ anthropicKey: e.target.value })} autoComplete="off" />
       <h3 style={{ marginTop: 16 }}>Models</h3>
+      <label>OpenAI text/vision model (prompt writer and plan reader)</label>
+      <input value={s.openaiTextModel} onChange={(e) => setSettings({ openaiTextModel: e.target.value })} />
       <label>Claude model (prompt writer)</label>
       <input value={s.claudeModel} onChange={(e) => setSettings({ claudeModel: e.target.value })} />
       <p className="mute">Model names change over time. If a render fails with "model not found", update the name here.</p>

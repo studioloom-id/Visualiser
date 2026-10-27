@@ -3,7 +3,7 @@ import { useStore, projectOf } from '../store'
 import type { Provider, Quality, Space } from '../types'
 import { estimateCost, projectSpend, usd, budgetBlock } from '../lib/cost'
 import { prepare, runGeneration, withOverride, expectedElements, forGenerator } from '../lib/run'
-import { writePromptWithClaude, missingMentions } from '../lib/claude'
+import { writePromptWithClaude, missingMentions, writerLabel } from '../lib/claude'
 import type { BuiltPrompt } from '../lib/prompt'
 
 export function GeneratePanel({ space, onDone }: { space: Space; onDone: () => void }) {
@@ -73,17 +73,17 @@ export function GeneratePanel({ space, onDone }: { space: Space; onDone: () => v
           <h3>Describe what you want</h3>
           <textarea value={wish} placeholder='e.g. "Evening view from the door, cosy and warm, the green armchair is the hero"' onChange={(e) => setWish(e.target.value)} />
           <div className="row" style={{ marginTop: 8, alignItems: 'center' }}>
-            <button className="primary" onClick={write} disabled={writing || busy}>{written ? 'Rewrite prompt with Claude' : 'Write prompt with Claude'}</button>
-            <span className="mute">Claude reads your plan, sizes and references, then writes the prompt for {provider === 'openai' ? 'OpenAI' : 'the image model'}.</span>
+            <button className="primary" onClick={write} disabled={writing || busy}>{written ? `Rewrite prompt with ${writerLabel(settings)}` : `Write prompt with ${writerLabel(settings)}`}</button>
+            <span className="mute">{writerLabel(settings)} reads your plan, sizes and references, then writes the prompt for {provider === 'openai' ? 'OpenAI' : 'the image model'}.</span>
           </div>
-          {writing && <p className="mute">Claude is writing…</p>}
+          {writing && <p className="mute">{writerLabel(settings)} is writing…</p>}
           {written && (
             <>
               {understood?.understanding && (
                 <div className="card" style={{ background: 'var(--bg)', marginTop: 8 }}>
-                  <h3>What Claude understood. Check this is right</h3>
+                  <h3>What {writerLabel(settings)} understood. Check this is right</h3>
                   <pre className="prompt" style={{ maxHeight: 'none', border: 'none', padding: 0 }}>{understood.understanding}</pre>
-                  {understood.questions && (<><h3 style={{ marginTop: 8 }}>Claude is unsure about</h3><pre className="prompt warn" style={{ maxHeight: 'none', border: 'none', padding: 0 }}>{understood.questions}</pre><p className="mute" style={{ margin: 0 }}>Answer in the box above and press Rewrite, or fix the plan.</p></>)}
+                  {understood.questions && (<><h3 style={{ marginTop: 8 }}>{writerLabel(settings)} is unsure about</h3><pre className="prompt warn" style={{ maxHeight: 'none', border: 'none', padding: 0 }}>{understood.questions}</pre><p className="mute" style={{ margin: 0 }}>Answer in the box above and press Rewrite, or fix the plan.</p></>)}
                 </div>
               )}
               <label>Prompt that will be sent (edit freely)</label>

@@ -119,6 +119,9 @@ export interface Settings {
   geminiKey: string
   openaiKey: string
   anthropicKey: string
+  /** who writes prompts and reads plans: auto = Claude if an Anthropic key is set, otherwise OpenAI */
+  writer: 'auto' | 'claude' | 'openai'
+  openaiTextModel: string
   claudeModel: string
   geminiDraftModel: string
   geminiFinalModel: string

@@ -4,7 +4,29 @@ import { shrink, splitDataUrl } from './img'
 import { ApiError } from './providers'
 import { uid } from '../store'
 
+export const writerOf = (s: Settings): 'claude' | 'openai' => (s.writer === 'auto' ? (s.anthropicKey.trim() ? 'claude' : 'openai') : s.writer)
+export const writerLabel = (s: Settings) => (writerOf(s) === 'claude' ? 'Claude' : 'OpenAI')
+
+async function openaiTextCall(settings: Settings, system: string, content: any[], maxTokens: number): Promise<string> {
+  const key = settings.openaiKey.trim()
+  if (!key) throw new ApiError('Add your OpenAI API key in Settings first.')
+  const parts = content.map((b) => (b.type === 'image' ? { type: 'image_url', image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } } : b))
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: settings.openaiTextModel, max_completion_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: parts }] }),
+  })
+  if (!res.ok) {
+    const j = await res.json().catch(() => null)
+    throw new ApiError(`OpenAI error ${res.status}: ${j?.error?.message ?? res.statusText}`.slice(0, 400))
+  }
+  const text = ((await res.json())?.choices?.[0]?.message?.content ?? '').trim()
+  if (!text) throw new ApiError('OpenAI returned an empty reply.')
+  return text
+}
+
 async function claudeCall(settings: Settings, system: string, content: unknown[], maxTokens: number): Promise<string> {
+  if (writerOf(settings) === 'openai') return openaiTextCall(settings, system, content as any[], maxTokens)
   const key = settings.anthropicKey.trim()
   if (!key) throw new ApiError('Add your Anthropic API key in Settings first.')
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -19,7 +41,7 @@ async function claudeCall(settings: Settings, system: string, content: unknown[]
   })
   if (!res.ok) {
     const j = await res.json().catch(() => null)
-    throw new ApiError(`Claude error ${res.status}: ${j?.error?.message ?? res.statusText}`.slice(0, 400))
+    throw new ApiError(`Claude error ${res.status} (you can switch the prompt writer to OpenAI in Settings): ${j?.error?.message ?? res.statusText}`.slice(0, 400))
   }
   const j = await res.json()
   const text = (j.content ?? []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim()

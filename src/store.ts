@@ -16,6 +16,8 @@ export const defaultSettings: Settings = {
   geminiKey: '',
   openaiKey: '',
   anthropicKey: '',
+  writer: 'auto',
+  openaiTextModel: 'gpt-4o',
   claudeModel: 'claude-sonnet-5-5',
   geminiDraftModel: 'gemini-2.5-flash-image',
   geminiFinalModel: 'gemini-3-pro-image-preview',
